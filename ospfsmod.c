@@ -452,8 +452,10 @@ ospfs_dir_readdir(struct file *filp, void *dirent, filldir_t filldir)
 		 * the loop.  For now we do this all the time.
 		 *
 		 * EXERCISE: Your code here */
-		r = 1;		/* Fix me! */
-		break;		/* Fix me! */
+		if((f_pos-2)*OSPFS_DIRENTRY_SIZE >= dir_oi->oi_size){
+			r = 1;		
+			break;		
+		}
 
 		/* Get a pointer to the next entry (od) in the directory.
 		 * The file system interprets the contents of a
@@ -476,6 +478,26 @@ ospfs_dir_readdir(struct file *filp, void *dirent, filldir_t filldir)
 		 */
 
 		/* EXERCISE: Your code here */
+		od = ospfs_inode_data(dir_oi, (f_pos-2)*OSPFS_DIRENTRY_SIZE);
+		if(od->od_ino > 0){ //ignore blank directory entries
+			entry_oi = ospfs_inode(od->od_ino); 
+			uint32_t type = 0;
+			if(entry_oi->oi_ftype == OSPFS_FTYPE_REG) {
+				type = DT_REG;
+			}
+			else if(entry_oi->oi_ftype == OSPFS_FTYPE_DIR) {
+				type = DT_DIR;
+			}
+			else if(entry_oi->oi_ftype == OSPFS_FTYPE_SYMLINK) {
+				type = DT_LNK;
+			}
+			ok_so_far = filldir(dirent, od->od_name, strlen(od->od_name), f_pos, od->od_ino, type);
+			if(ok_so_far > 0) {
+				f_pos++;
+			}
+    		}
+    		else //advance f_pos to next directory entry
+    			f_pos++;
 	}
 
 	// Save the file position and return!
@@ -553,6 +575,14 @@ static uint32_t
 allocate_block(void)
 {
 	/* EXERCISE: Your code here */
+	int i;
+	int bitmap = ospfs_block(OSPFS_FREEMAP_BLK);
+	for(i=0; i<OSPFS_BLKBITSIZE; i++){ //loop through bit map
+		if(bitvector_test(bitmap, i)==1) { //if the bit is 1
+			bitvector_clear(bitmap, i); //set it to being used
+			return i;
+		}
+	}
 	return 0;
 }
 
@@ -572,6 +602,10 @@ static void
 free_block(uint32_t blockno)
 {
 	/* EXERCISE: Your code here */
+	//test if blockno is within free block range
+	if((ospfs_super->os_firstinob + ospfs_super->os_ninodes/OSPFS_BLKINODES) < blockno && blockno< ospfs_super->os_nblocks) {
+		bitvector_set(ospfs_block(OSPFS_FREEMAP_BLK), blockno);
+	}
 }
 
 
@@ -608,6 +642,9 @@ static int32_t
 indir2_index(uint32_t b)
 {
 	// Your code here.
+	if(b >= OSPFS_NDIRECT+OSPFS_NINDIRECT)
+		return 0;
+	//else
 	return -1;
 }
 
@@ -627,7 +664,11 @@ static int32_t
 indir_index(uint32_t b)
 {
 	// Your code here.
-	return -1;
+	if(b<OSPFS_NDIRECT)
+		return -1;
+	else if(b<OSPFS_NINDIRECT+OSPFS_NDIRECT)
+		return 0;
+	return (b-OSPFS_NINDIRECT-OSPFS_NDIRECT)/OSPFS_NINDIRECT;
 }
 
 
@@ -644,6 +685,12 @@ static int32_t
 direct_index(uint32_t b)
 {
 	// Your code here.
+	if(0<=b && b<OSPFS_NDIRECT)
+		return b;
+	else if(OSPFS_NDIRECT<=b && b<OSPFS_NINDIRECT+OSPFS_NDIRECT)
+		return b-OSPFS_NDIRECT;
+	else if(b>=(OSPFS_NDIRECT+OSPFS_NINDIRECT))
+		return b-OSPFS_NDIRECT-OSPFS_NINDIRECT;
 	return -1;
 }
 
