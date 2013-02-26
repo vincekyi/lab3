@@ -734,9 +734,77 @@ add_block(ospfs_inode_t *oi)
 
 	// keep track of allocations to free in case of -ENOSPC
 	uint32_t *allocated[2] = { 0, 0 };
+	
 
 	/* EXERCISE: Your code here */
-	return -EIO; // Replace this line
+	//keeps track of blocks being allocated
+	uint32_t direct = 0, indirect1 = 0, indirect2 = 0;
+	//make sure n isn't over max block limit
+	if(n>OSPFS_MAXFILEBLKS)
+		return -EIO;
+	//need indirect blocks
+	if(OSPFS_NDIRECT<=n){
+		//allocate for first indirect block
+		indirect1 = allocate_block();
+		//if no more space, return error
+		if(indirect1 == 0)
+			return -ENOSPC;
+		//allocate memory
+		allocated[0] = ospfs_block(indirect1);
+		memset(allocated[0], 0, OSPFS_BLKSIZE);
+		oi->oi_indirect = indirect1;
+		
+		//allocate for 2nd indirect block
+		if(n>=(OSPFS_NDIRECT+OSPFS_NINDIRECT)) {
+			indirect2 = allocate_block();
+			//if no more space, return error
+			if(indirect2 == 0){
+				if(allocated[0]!=0)
+					free_block(*allocated[0]);
+				return -ENOSPC;
+			}
+			//allocate memory
+			allocated[1] = ospfs_block(indirect2);
+			memset(allocated[1], 0, OSPFS_BLKSIZE);
+			oi->oi_indirect2 = indirect2;
+		}
+	}
+	
+	//allocate direct blocks
+	direct = allocate_block();
+	//if there is no more space, return error
+	if(direct == 0) {
+		if(allocated[0]!=0)
+			free_block(*allocated[0]);
+		if(allocated[1]!=0)
+			free_block(*allocated[1]);
+		return -ENOSPC;
+	}
+
+	//store disk block number
+	int32_t indir1_in = indir_index(n);
+	int32_t indir2_in = indir2_index(n);
+	int32_t dir_in = direct_index(n);
+	uint32_t* indir1_blk;
+	uint32_t* indir2_blk;
+	if(indir2_in == -1) {
+		memset(ospfs_block(direct), 0, OSPFS_BLKSIZE);
+		if(indir1_in == -1) {
+			indir1_blk =  (uint32_t*) ospfs_block(oi->oi_indirect);
+			indir1_blk[dir_in] = direct;
+		}
+		else
+			oi->oi_direct[n] = direct;
+	}
+	else {
+		indir2_blk =  (uint32_t*)ospfs_block(oi->oi_indirect2);
+		uint32_t temp = indir2_blk[indir1_in];
+		indir1_blk =  (uint32_t*)ospfs_block(temp);
+		indir1_blk[dir_in] = direct;
+	}
+	//update oi_size
+	oi->oi_size = (n+1)*OSPFS_BLKSIZE;
+	return 0; 
 }
 
 
@@ -767,8 +835,14 @@ remove_block(ospfs_inode_t *oi)
 {
 	// current number of blocks in file
 	uint32_t n = ospfs_size2nblocks(oi->oi_size);
+	if(n==0) {
+		return -EIO;
+	}
 
 	/* EXERCISE: Your code here */
+	int32_t indir1_in = indir_index(n-1);
+	int32_t indir2_in = indir2_index(n-1);
+	int32_t dir_in = direct_index(n-1);
 	return -EIO; // Replace this line
 }
 
