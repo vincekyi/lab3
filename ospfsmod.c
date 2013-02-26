@@ -843,6 +843,13 @@ remove_block(ospfs_inode_t *oi)
 	int32_t indir1_in = indir_index(n-1);
 	int32_t indir2_in = indir2_index(n-1);
 	int32_t dir_in = direct_index(n-1);
+	
+	//no indirect links
+	if(indir1_in == -1 && indir2_in == -1) {
+		free_block(oi->oi_block[n-1]);
+		oi->oi_block[n-1] = NULL;
+		i->oi_size = (n-1)*OSPFS_BLKSIZE;
+	}
 	return -EIO; // Replace this line
 }
 
