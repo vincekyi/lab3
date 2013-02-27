@@ -845,12 +845,44 @@ remove_block(ospfs_inode_t *oi)
 	int32_t dir_in = direct_index(n-1);
 	
 	//no indirect links
-	if(indir1_in == -1 && indir2_in == -1) {
-		free_block(oi->oi_block[n-1]);
-		oi->oi_block[n-1] = NULL;
-		i->oi_size = (n-1)*OSPFS_BLKSIZE;
+	if(indir1_in < 0 && indir2_in < 0) {
+		free_block(oi->oi_direct[n-1]);
+		oi->oi_direct[n-1] = NULL;
+		oi->oi_size = (n-1)*OSPFS_BLKSIZE;
 	}
-	return -EIO; // Replace this line
+	// 1 indirect
+	else if(indir2_in < 0) {
+			uint32_t* dir1_block = ospfs_block(oi->oi_indirect);        
+			dir1_block[n - 1 - OSPFS_NDIRECT] = 0;    
+			//if there is only 1 block in the indirect block   
+			if (n-2 < OSPFS_NDIRECT) {            
+				free_block(oi->oi_indirect);                    
+				oi->oi_indirect = NULL;        
+			}       
+		//update size      
+		oi->oi_size = ( n -1 ) * OSPFS_BLKSIZE;       
+	}
+	// 2 indirect
+	else if(indir2_in == 0) {
+		uint32_t* indir2_blk =  (uint32_t*)ospfs_block(oi->oi_indirect2);
+		uint32_t temp = indir2_blk[indir1_in];
+		uint32_t* indir1_blk =  (uint32_t*)ospfs_block(temp);
+		
+		free_block(indir1_blk[dir_in]);
+		indir1_blk[dir_in] = 0;
+		// if 
+		if(indir_index(n-2) < indir1_in) {
+			free_block(indir2_blk[indir1_in]);
+			indir2_blk[indir1_in] = 0;
+		}
+		// if there was only 1 block in indir2_blk
+		if(indir2_index(n-2) < 0) {
+			free_block(oi->oi_indirect2);
+			oi->oi_indirect2 = NULL;
+		}
+		oi->oi_size = ( n -1 ) * OSPFS_BLKSIZE;  
+	}
+	return 0; 
 }
 
 
@@ -898,16 +930,31 @@ change_size(ospfs_inode_t *oi, uint32_t new_size)
 
 	while (ospfs_size2nblocks(oi->oi_size) < ospfs_size2nblocks(new_size)) {
 	        /* EXERCISE: Your code here */
-		return -EIO; // Replace this line
+	        r= add_block(oi);
+	        if(r == -ENOSPC) {
+	        	// shrink back to original size
+	        	while (ospfs_size2nblocks(oi->oi_size) > ospfs_size2nblocks(new_size)) {
+				r = remove_block(oi);
+				if(r<0) 
+					return r;
+			}
+			oi->oi_size = old_size;
+			return -ENOSPC;
+	        }
+	        else if(r == -EIO)
+			return -EIO; 
 	}
 	while (ospfs_size2nblocks(oi->oi_size) > ospfs_size2nblocks(new_size)) {
 	        /* EXERCISE: Your code here */
-		return -EIO; // Replace this line
+	        r = remove_block(oi);
+	        if(r<0) 
+	        	return r;
 	}
 
 	/* EXERCISE: Make sure you update necessary file meta data
 	             and return the proper value. */
-	return -EIO; // Replace this line
+	oi->oi_size = new_size;
+	return 0; //success
 }
 
 
@@ -973,6 +1020,8 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 	// Make sure we don't read past the end of the file!
 	// Change 'count' so we never read past the end of the file.
 	/* EXERCISE: Your code here */
+	if(count > oi->oi_size - *f_pos)
+		count = oi->oi_size - *f_pos;
 
 	// Copy the data to user block by block
 	while (amount < count && retval >= 0) {
@@ -993,8 +1042,18 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 		// into user space.
 		// Use variable 'n' to track number of bytes moved.
 		/* EXERCISE: Your code here */
-		retval = -EIO; // Replace these lines
-		goto done;
+		n = OSPFS_BLKSIZE - (*f_pos)%OSPFS_BLKSIZE;
+		
+		//if at the end of file
+		if(n > count - amount) {
+			n = count - amount;
+		}
+		//copy the data
+		retval =  copy_to_user(buffer, data, n);
+		if(retval < 0){
+			retval = -EFAULT; 
+			goto done;
+		}
 
 		buffer += n;
 		amount += n;
@@ -1033,10 +1092,15 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 	// Support files opened with the O_APPEND flag.  To detect O_APPEND,
 	// use struct file's f_flags field and the O_APPEND bit.
 	/* EXERCISE: Your code here */
-
+	if(filp->f_flags & O_APPEND)
+		*f_pos = oi->oi_size; //set it to the end of file
 	// If the user is writing past the end of the file, change the file's
 	// size to accomodate the request.  (Use change_size().)
 	/* EXERCISE: Your code here */
+	if(count + *f_pos > oi->oi_size) {
+		if((retval = change_size(oi, count+ *f_pos)) < 0)
+			goto done;
+	}
 
 	// Copy data block by block
 	while (amount < count && retval >= 0) {
@@ -1056,8 +1120,18 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 		// read user space.
 		// Keep track of the number of bytes moved in 'n'.
 		/* EXERCISE: Your code here */
-		retval = -EIO; // Replace these lines
-		goto done;
+		n = OSPFS_BLKSIZE - (*f_pos)%OSPFS_BLKSIZE;
+		
+		//if at the end of file
+		if(n > count - amount) {
+			n = count - amount;
+		}
+		//copy the data
+		
+		if(copy_to_user(data, buffer, n)){
+			retval = -EFAULT; 
+			goto done;
+		}
 
 		buffer += n;
 		amount += n;
