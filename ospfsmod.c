@@ -1274,7 +1274,7 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
 static int
 ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dentry) {
 	/* EXERCISE: Your code here. */
-	ospfs_inode_t* dir_inode = ospfs_inode(dir->i_ino);
+/*	ospfs_inode_t* dir_inode = ospfs_inode(dir->i_ino);
 	if (find_direntry(dir_inode, dst_dentry->d_name.name, dst_dentry->d_name.len))
 		return -EEXIST;
 	if (dst_dentry->d_name.len > OSPFS_MAXNAMELEN)
@@ -1293,7 +1293,8 @@ ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dent
 
 	// increment the number of links pointing to it
 	src_inode->oi_nlink++;
-	return 0;
+	return 0; */
+    return -EINVAL;
 }
 
 // ospfs_create
@@ -1310,11 +1311,11 @@ ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dent
 //			   inode's oi_mode field to this value)
 //	      nd	-- ignore this
 //   Returns: 0 on success, -(error code) on error.  In particular:
-//               -ENAMETOOLONG if dentry->d_name.len is too large;
-//               -EEXIST       if a file named the same as 'dentry' already
+//               done-ENAMETOOLONG if dentry->d_name.len is too large;
+//               done-EEXIST       if a file named the same as 'dentry' already
 //                             exists in the given 'dir';
-//               -ENOSPC       if the disk is full & the file can't be created;
-//               -EIO          on I/O error.
+//               done-ENOSPC       if the disk is full & the file can't be created;
+//               ithinkso-EIO          on I/O error.
 //
 //   We have provided strictly less skeleton code for this function than for
 //   the others.  Here's a brief outline of what you need to do:
@@ -1325,13 +1326,71 @@ ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dent
 //
 //   EXERCISE: Complete this function.
 
+//WORK ON THIS
 static int
 ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidata *nd)
 {
 	ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
 	uint32_t entry_ino = 0;
 	/* EXERCISE: Your code here. */
-	return -EINVAL; // Replace this line
+
+    //only care about dentry->d_name.name (filename no null byte)
+    //                dentry->d_name.len  (length of filename)
+    
+    //return -ENAMETOOLONG if dentry->d_name.len is too large
+    if(dentry->d_name.len > OSPFS_MAXNAMELEN){//too large
+        return -ENAMETOOLONG;
+    }
+
+    //1. Check for the -EEXIST error and find an empty directory entry using the helper functions above.
+    ospfs_direntry_t* exists = find_direntry(dir_oi, dentry->d_name.name, dentry->d_name.len);
+    if(NULL != exists){ //already exists
+        return -EEXIST;
+    }
+
+    //find an new, empty directory
+    ospfs_direntry_t *empty_dir = create_blank_direntry(dir_oi);
+    if(IS_ERR(empty_dir)){
+        return -EIO;
+    }
+
+    //2. Find an empty inode.  Set the 'entry_ino' variable to its inode number.
+    ospfs_inode_t *empty_inode;
+
+    //search all inodes until we get a inode which is free
+    for(entry_ino = 0; entry_ino < ospfs_super->os_ninodes; entry_ino++){
+        empty_inode = ospfs_inode(entry_ino);
+        //check if found && free
+        if((empty_inode != 0) && (empty_inode->oi_nlink == 0)){
+            empty_inode->oi_nlink++;
+            break; //we are good to go
+        }
+    }
+    if(entry_ino == ospfs_super->os_ninodes){//didnt find free inode b/c full
+        return -ENOSPC;
+    }
+
+    //3. Initialize the directory entry and inode.
+
+//dentry->d_name.name (filename no null byte)
+    //initialize directory
+    empty_dir->od_ino = entry_ino; //inode number
+    //assign wont work? memcpy
+    memcpy(empty_dir->od_name, dentry->d_name.name, dentry->d_name.len);//file name
+    empty_dir->od_name[dentry->d_name.len] = 0; //null
+
+    //initialize inode
+    empty_inode->oi_size = 0; //File size
+    empty_inode->oi_ftype = OSPFS_FTYPE_REG; //0 for regular file
+    //empty_inode->oi_nlink was set above //link count
+    empty_inode->oi_mode = mode; //file permissions mode
+    memset(empty_inode->oi_direct, 0, sizeof(empty_inode->oi_direct[0])*OSPFS_NDIRECT); //set all direct block pointers 
+    empty_inode->oi_indirect = 0; //indirect block
+    empty_inode->oi_indirect2 = 0; //doubly indirect block
+
+
+
+	//return -EINVAL; // Remove this line
 
 	/* Execute this code after your function has successfully created the
 	   file.  Set entry_ino to the created file's inode number before
