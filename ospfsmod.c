@@ -1530,8 +1530,38 @@ ospfs_follow_link(struct dentry *dentry, struct nameidata *nd)
 		(ospfs_symlink_inode_t *) ospfs_inode(dentry->d_inode->i_ino);
 	// Exercise: Your code here.
 
-	nd_set_link(nd, oi->oi_symlink);
-	return (void *) 0;
+    //root?ifrootpath:ifnotrootpath
+    //if ^ found, its cond symlink
+    //if current->uid == 0 then we are root so do ifrootpath
+
+    //first check if root?ifrootpath:ifnotrootpath
+    if(strncmp(oi->oi_symlink, "root?", 5)){
+        int i;//find the :
+        for(i = 5; i <strlen(oi->oi_symlink); i++){
+            if(oi->oi_symlink[i] == ':'){//found correct formt for cond
+                break;
+            }
+        }
+        if(i == strlen(oi->oi_symlink)){//just normal symlink..duno why starts with root?
+	        nd_set_link(nd, oi->oi_symlink);
+	        return (void *) 0;
+        }
+        //we have root?ifrootpath:ifnotrootpath
+        //with : at index i
+        oi->oi_symlink[i] = '\0';
+        if(current->uid == 0){//we are root
+            nd_set_link(nd, 5 + oi->oi_symlink);
+            return (void *) 0;
+        }
+        else{//we are not root
+            nd_set_link(nd, 1+i + oi->oi_symlink);
+            return (void *) 0;
+        }
+    }
+    else{//not cond so just treat normally
+	    nd_set_link(nd, oi->oi_symlink);
+	    return (void *) 0;
+    }
 }
 
 
