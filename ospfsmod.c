@@ -1274,10 +1274,26 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
 static int
 ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dentry) {
 	/* EXERCISE: Your code here. */
-	ospfs_inode_t* dir_oi = ospfs_inode(dir->i_ino);
-	if (find_direntry(dir_oi, dst_dentry->d_name.name, dst_dentry->d_name.len))
+	ospfs_inode_t* dir_inode = ospfs_inode(dir->i_ino);
+	if (find_direntry(dir_inode, dst_dentry->d_name.name, dst_dentry->d_name.len))
 		return -EEXIST;
-	return -EINVAL;
+	if (dst_dentry->d_name.len > OSPFS_MAXNAMELEN)
+		return -ENAMETOOLONG;
+
+	//create a new directory
+	ospfs_direntry_t* dst_inode = create_blank_direntry(dir_inode);
+	//check is destination inode is valid
+	if(IS_ERR(dst_inode)) 
+		return -EIO;
+	//get information from source inode
+	ospfs_inode_t* src_inode = ospfs_inode(src_dentry->d_inode->i_ino);
+	// set destination inode to source inode
+	dst_dir->od_ino = src_dentry->d_inode->i_ino;
+	strcpy(dst_dir->od_name, dst_dentry->d_name.name);
+
+	// increment the number of links pointing to it
+	src_inode->oi_nlink++;
+	return 0;
 }
 
 // ospfs_create
