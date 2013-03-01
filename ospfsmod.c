@@ -1418,7 +1418,7 @@ ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidat
 //           symname -- the symbolic link's destination
 //
 //   Returns: 0 on success, -(error code) on error.  In particular:
-//               -ENAMETOOLONG if dentry->d_name.len is too large, or
+//               yes-ENAMETOOLONG if dentry->d_name.len is too large, or
 //			       'symname' is too long;
 //               -EEXIST       if a file named the same as 'dentry' already
 //                             exists in the given 'dir';
@@ -1434,7 +1434,68 @@ ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 	uint32_t entry_ino = 0;
 
 	/* EXERCISE: Your code here. */
-	return -EINVAL;
+//	return -EINVAL;
+
+
+//   Returns: 0 on success, -(error code) on error.  In particular:
+//               -ENAMETOOLONG if dentry->d_name.len is too large, or
+//			       'symname' is too long;
+//               -EEXIST       if a file named the same as 'dentry' already
+//                             exists in the given 'dir';
+//               -ENOSPC       if the disk is full & the file can't be created;
+//               -EIO          on I/O error.
+
+
+    //if dentry->d_name.len is too large or symname is too long
+    if((dentry->d_name.len > OSPFS_MAXNAMELEN) || (strlen(symname) > OSPFS_MAXNAMELEN)){
+        return -ENAMETOOLONG;
+    }
+
+    //Check for the -EEXIST error and find an empty directory entry using the helper functions above.
+    ospfs_direntry_t* exists = find_direntry(dir_oi, dentry->d_name.name, dentry->d_name.len);
+    if(NULL != exists){ //already exists
+        return -EEXIST;
+    }
+
+    //find an new, empty directory
+    ospfs_direntry_t *empty_dir = create_blank_direntry(dir_oi);
+    if(IS_ERR(empty_dir)){
+        return -EIO;
+    }
+
+    //Find an empty inode.  Set the 'entry_ino' variable to its inode number.
+    ospfs_symlink_inode_t *empty_inode;
+
+    //search all inodes until we get a inode which is free
+    for(entry_ino = 0; entry_ino < ospfs_super->os_ninodes; entry_ino++){
+        empty_inode = (ospfs_symlink_inode_t*) ospfs_inode(entry_ino); //make symlink
+        //check if found && free
+        if((empty_inode != 0) && (empty_inode->oi_nlink == 0)){
+            empty_inode->oi_nlink++;
+            break; //we are good to go
+        }
+    }
+    if(entry_ino == ospfs_super->os_ninodes){//didnt find free inode b/c full
+        return -ENOSPC;
+    }
+
+    
+    //Initialize the directory entry and inode.
+
+//dentry->d_name.name (filename no null byte)
+    //initialize directory
+    empty_dir->od_ino = entry_ino; //inode number
+    memcpy(empty_dir->od_name, dentry->d_name.name, dentry->d_name.len);//file name
+    empty_dir->od_name[dentry->d_name.len] = 0; //null
+
+    //initialize inode
+    empty_inode->oi_size = strlen(symname); //File size
+    empty_inode->oi_ftype = OSPFS_FTYPE_SYMLINK;
+    //empty_inode->oi_nlink was set above //link count
+    //memset(empty_inode->oi_direct, 0, sizeof(empty_inode->oi_direct[0])*OSPFS_NDIRECT);
+    memcpy(empty_inode->oi_symlink, symname, strlen(symname)); //dest file
+    //needed?
+    empty_inode->oi_symlink[strlen(symname)] = 0;
 
 	/* Execute this code after your function has successfully created the
 	   file.  Set entry_ino to the created file's inode number before
