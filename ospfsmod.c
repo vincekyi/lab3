@@ -1108,9 +1108,9 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 	// size to accomodate the request.  (Use change_size().)
 	/* EXERCISE: Your code here */
 	if(count + *f_pos > oi->oi_size) {
-		eprintk("changing size\n");
+		//eprintk("changing size\n");
 		if((retval = change_size(oi, count+ *f_pos)) < 0) {
-			eprintk("changing size error\n");
+			//eprintk("changing size error\n");
 			goto done;
 			}
 	}
@@ -1122,7 +1122,7 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 		char *data;
 
 		if (blockno == 0) {
-			eprintk("wrong block number\n");
+			//eprintk("wrong block number\n");
 			retval = -EIO;
 			goto done;
 		}
@@ -1148,7 +1148,7 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 		    n = oi->oi_size - (*f_pos);
 
 		if (copy_from_user(data, buffer, n) != 0) {
-			eprintk("copying data\n");
+			//eprintk("copying data\n");
 			    retval = -EFAULT; 
 			    goto done;
 		}
@@ -1340,7 +1340,7 @@ ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dent
 static int
 ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidata *nd)
 {
-eprintk("create file\n");
+//eprintk("create file\n");
 	ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
 	uint32_t entry_ino = 0;
 	/* EXERCISE: Your code here. */
@@ -1356,14 +1356,14 @@ eprintk("create file\n");
     //1. Check for the -EEXIST error and find an empty directory entry using the helper functions above.
     ospfs_direntry_t* exists = find_direntry(dir_oi, dentry->d_name.name, dentry->d_name.len);
     if(NULL != exists){ //already exists
-    	eprintk("already exists\n");
+    	////eprintk("already exists\n");
         return -EEXIST;
     }
 
     //find an new, empty directory
     ospfs_direntry_t *empty_dir = create_blank_direntry(dir_oi);
     if(IS_ERR(empty_dir)){
-    	eprintk("empty dir\n");
+    	//eprintk("empty dir\n");
         return PTR_ERR(empty_dir);
     }
 
@@ -1376,12 +1376,12 @@ eprintk("create file\n");
         //check if found && free
         if((empty_inode != 0) && (empty_inode->oi_nlink == 0)){
             empty_inode->oi_nlink++;
-            eprintk("found free\n");
+            //eprintk("found free\n");
             break; //we are good to go
         }
     }
     if(entry_ino == ospfs_super->os_ninodes){//didnt find free inode b/c full
-   	eprintk("inode full\n");
+   	//eprintk("inode full\n");
         return -ENOSPC;
     }
 
@@ -1393,7 +1393,7 @@ eprintk("create file\n");
     //assign wont work? memcpy
     memcpy(empty_dir->od_name, dentry->d_name.name, dentry->d_name.len);//file name
     empty_dir->od_name[dentry->d_name.len] = 0; //null
-	eprintk("name: %s\n", empty_dir->od_name);
+	//eprintk("name: %s\n", empty_dir->od_name);
     //initialize inode
     empty_inode->oi_size = 0; //File size
     empty_inode->oi_ftype = OSPFS_FTYPE_REG; //0 for regular file
@@ -1511,7 +1511,7 @@ ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
     //needed?
     empty_inode->oi_symlink[strlen(symname)] = 0;
 
-	/* Execute this code after your function has successfully created the
+/* Execute this code after your function has successfully created the
 	   file.  Set entry_ino to the created file's inode number before
 	   getting here. */
 	{
@@ -1547,12 +1547,17 @@ ospfs_follow_link(struct dentry *dentry, struct nameidata *nd)
     //root?ifrootpath:ifnotrootpath
     //if ^ found, its cond symlink
     //if current->uid == 0 then we are root so do ifrootpath
-
+ int leng = strlen(oi->oi_symlink);
+ int i = 0;
     //first check if root?ifrootpath:ifnotrootpath
-    if(strncmp(oi->oi_symlink, "root?", 5)){
-        int i;//find the :
+    eprintk("this is the symlink: %s\n", oi->oi_symlink);
+    if(strncmp(oi->oi_symlink, "root?", 5) == 0){
+                 eprintk("we found cond symlink\n");
+
+              //find the :
         for(i = 5; i <strlen(oi->oi_symlink); i++){
             if(oi->oi_symlink[i] == ':'){//found correct formt for cond
+                eprintk("actual cond symlink found here.\n");
                 break;
             }
         }
@@ -1562,20 +1567,36 @@ ospfs_follow_link(struct dentry *dentry, struct nameidata *nd)
         }
         //we have root?ifrootpath:ifnotrootpath
         //with : at index i
-        oi->oi_symlink[i] = '\0';
         if(current->uid == 0){//we are root
-            nd_set_link(nd, 5 + oi->oi_symlink);
-            return (void *) 0;
+            char tempp[leng +1];
+            //strncpy(temp, 5+oi->oi_symlink, i-5);
+            //oi->oi_symlink[i] = '\0';
+           // temp[i-5] = 0;
+          // char* tempp;
+            strcpy(tempp, oi->oi_symlink);
+            tempp[i] = 0;
+            //tempp = 5 + oi->oi_symlink;
+            eprintk("this is the link we try to follow **%s**\n", tempp + 5/*5 + oi->oi_symlink*/);
+
+            nd_set_link(nd, tempp + 5);
+            //oi->oi_symlink[i] = ':';
+            //return (void *) 0;
         }
         else{//we are not root
+            //oi->oi_symlink[i] = ':';
+            eprintk("this is the link we are trying to follow %s\n", 1+i+oi->oi_symlink);
             nd_set_link(nd, 1+i + oi->oi_symlink);
-            return (void *) 0;
+            //return (void *) 0;
         }
     }
     else{//not cond so just treat normally
 	    nd_set_link(nd, oi->oi_symlink);
-	    return (void *) 0;
     }
+    if(!(i == leng)){
+        //oi->oi_symlink[i] = ':';
+    }
+	return (void *) 0;
+    
 }
 
 
