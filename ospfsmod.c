@@ -1056,6 +1056,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 		if(n > count - amount) {
 			n = count - amount;
 		}
+        
 		//copy the data
 		retval =  copy_to_user(buffer, data, n);
 		if(retval < 0){
@@ -1242,7 +1243,8 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
 		return ERR_PTR(err);
 	
 	//create new directory
-	dir = (ospfs_direntry_t*) ospfs_inode_data(dir_oi, entry);
+    //to kyi: changed the starting point of new dir to be before dir_oi->size b/c size changed (above)
+	dir = (ospfs_direntry_t*) ospfs_inode_data(dir_oi, dir_oi->oi_size - OSPFS_DIRENTRY_SIZE);
 	dir->od_ino = 0;
 	dir->od_name[0] = 0;
 
