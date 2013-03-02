@@ -1138,16 +1138,15 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 		n = OSPFS_BLKSIZE - ((*f_pos) % OSPFS_BLKSIZE);
 		//increments data so that the position you are at is correct
 		data += (*f_pos) % OSPFS_BLKSIZE;
-		
 		//check to make sure if the size is above
-		if (n >= count - amount) {
+		if (n > count - amount) {
 		    n = count - amount;
 		}
 
 		if (n > (oi->oi_size - (*f_pos))) 
 		    n = oi->oi_size - (*f_pos);
 
-		if (copy_from_user(data, buffer, n)) {
+		if (copy_from_user(data, buffer, n) != 0) {
 			eprintk("copying data\n");
 			    retval = -EFAULT; 
 			    goto done;
