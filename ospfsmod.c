@@ -1051,7 +1051,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 		// Use variable 'n' to track number of bytes moved.
 		/* EXERCISE: Your code here */
 		n = OSPFS_BLKSIZE - (*f_pos)%OSPFS_BLKSIZE;
-		
+		data += *f_pos % OSPFS_BLKSIZE;
 		//if at the end of file
 		if(n > count - amount) {
 			n = count - amount;
@@ -1093,6 +1093,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 static ssize_t
 ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *f_pos)
 {
+	//eprintk("write\n");
 	ospfs_inode_t *oi = ospfs_inode(filp->f_dentry->d_inode->i_ino);
 	int retval = 0;
 	size_t amount = 0;
@@ -1106,8 +1107,11 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 	// size to accomodate the request.  (Use change_size().)
 	/* EXERCISE: Your code here */
 	if(count + *f_pos > oi->oi_size) {
-		if((retval = change_size(oi, count+ *f_pos)) < 0)
+		eprintk("changing size\n");
+		if((retval = change_size(oi, count+ *f_pos)) < 0) {
+			eprintk("changing size error\n");
 			goto done;
+			}
 	}
 
 	// Copy data block by block
@@ -1117,6 +1121,7 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 		char *data;
 
 		if (blockno == 0) {
+			eprintk("wrong block number\n");
 			retval = -EIO;
 			goto done;
 		}
@@ -1128,25 +1133,29 @@ ospfs_write(struct file *filp, const char __user *buffer, size_t count, loff_t *
 		// read user space.
 		// Keep track of the number of bytes moved in 'n'.
 		/* EXERCISE: Your code here */
-
-		n = OSPFS_BLKSIZE - *f_pos % OSPFS_BLKSIZE;
-		data += *f_pos % OSPFS_BLKSIZE;
 		
+		// gets the size of the block you want to copy
+		n = OSPFS_BLKSIZE - ((*f_pos) % OSPFS_BLKSIZE);
+		//increments data so that the position you are at is correct
+		data += (*f_pos) % OSPFS_BLKSIZE;
+		
+		//check to make sure if the size is above
 		if (n >= count - amount) {
 		    n = count - amount;
 		}
 
-		if (n > (oi->oi_size - *f_pos)) 
-		    n = oi->oi_size - *f_pos;
+		if (n > (oi->oi_size - (*f_pos))) 
+		    n = oi->oi_size - (*f_pos);
 
 		if (copy_from_user(data, buffer, n)) {
+			eprintk("copying data\n");
 			    retval = -EFAULT; 
 			    goto done;
 		}
 
-buffer += n;
-amount += n;
-*f_pos += n;
+	buffer += n;
+	amount += n;
+	*f_pos += n;
 }
 
     done:
@@ -1218,7 +1227,7 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
 	//    if you find it.
 	ospfs_direntry_t* dir;
 	uint32_t entry;
-	for(entry = 0; entry<dir_oi->oi_size; entry+=OSPFS_DIRENTRY_SIZE) {
+	for(entry = 0; entry < dir_oi->oi_size; entry+=OSPFS_DIRENTRY_SIZE) {
 		dir = (ospfs_direntry_t*) ospfs_inode_data(dir_oi, entry);
 		if(dir->od_ino == 0)
 			return dir;
@@ -1274,7 +1283,7 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
 static int
 ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dentry) {
 	/* EXERCISE: Your code here. */
-/*	ospfs_inode_t* dir_inode = ospfs_inode(dir->i_ino);
+	ospfs_inode_t* dir_inode = ospfs_inode(dir->i_ino);
 	if (find_direntry(dir_inode, dst_dentry->d_name.name, dst_dentry->d_name.len))
 		return -EEXIST;
 	if (dst_dentry->d_name.len > OSPFS_MAXNAMELEN)
@@ -1288,13 +1297,13 @@ ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dent
 	//get information from source inode
 	ospfs_inode_t* src_inode = ospfs_inode(src_dentry->d_inode->i_ino);
 	// set destination inode to source inode
-	dst_dir->od_ino = src_dentry->d_inode->i_ino;
-	strcpy(dst_dir->od_name, dst_dentry->d_name.name);
+	dst_inode->od_ino = src_dentry->d_inode->i_ino;
+	strncpy(dst_inode->od_name, dst_dentry->d_name.name, dst_dentry->d_name.len);
+	dst_inode->od_name[dst_dentry->d_name.len] = 0;
 
 	// increment the number of links pointing to it
 	src_inode->oi_nlink++;
-	return 0; */
-    return -EINVAL;
+	return 0; 
 }
 
 // ospfs_create
@@ -1330,6 +1339,7 @@ ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dent
 static int
 ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidata *nd)
 {
+eprintk("create file\n");
 	ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
 	uint32_t entry_ino = 0;
 	/* EXERCISE: Your code here. */
@@ -1345,13 +1355,15 @@ ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidat
     //1. Check for the -EEXIST error and find an empty directory entry using the helper functions above.
     ospfs_direntry_t* exists = find_direntry(dir_oi, dentry->d_name.name, dentry->d_name.len);
     if(NULL != exists){ //already exists
+    	eprintk("already exists\n");
         return -EEXIST;
     }
 
     //find an new, empty directory
     ospfs_direntry_t *empty_dir = create_blank_direntry(dir_oi);
     if(IS_ERR(empty_dir)){
-        return -EIO;
+    	eprintk("empty dir\n");
+        return PTR_ERR(empty_dir);
     }
 
     //2. Find an empty inode.  Set the 'entry_ino' variable to its inode number.
@@ -1363,10 +1375,12 @@ ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidat
         //check if found && free
         if((empty_inode != 0) && (empty_inode->oi_nlink == 0)){
             empty_inode->oi_nlink++;
+            eprintk("found free\n");
             break; //we are good to go
         }
     }
     if(entry_ino == ospfs_super->os_ninodes){//didnt find free inode b/c full
+   	eprintk("inode full\n");
         return -ENOSPC;
     }
 
@@ -1378,7 +1392,7 @@ ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidat
     //assign wont work? memcpy
     memcpy(empty_dir->od_name, dentry->d_name.name, dentry->d_name.len);//file name
     empty_dir->od_name[dentry->d_name.len] = 0; //null
-
+	eprintk("name: %s\n", empty_dir->od_name);
     //initialize inode
     empty_inode->oi_size = 0; //File size
     empty_inode->oi_ftype = OSPFS_FTYPE_REG; //0 for regular file
@@ -1487,7 +1501,6 @@ ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
     empty_dir->od_ino = entry_ino; //inode number
     memcpy(empty_dir->od_name, dentry->d_name.name, dentry->d_name.len);//file name
     empty_dir->od_name[dentry->d_name.len] = 0; //null
-
     //initialize inode
     empty_inode->oi_size = strlen(symname); //File size
     empty_inode->oi_ftype = OSPFS_FTYPE_SYMLINK;
