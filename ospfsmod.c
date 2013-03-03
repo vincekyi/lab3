@@ -1537,6 +1537,7 @@ ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 //   (hint: Should the given form be changed in any way to make this method
 //   easier?  With which character do most functions expect C strings to end?)
 
+
 static void *
 ospfs_follow_link(struct dentry *dentry, struct nameidata *nd)
 {
@@ -1547,58 +1548,43 @@ ospfs_follow_link(struct dentry *dentry, struct nameidata *nd)
     //root?ifrootpath:ifnotrootpath
     //if ^ found, its cond symlink
     //if current->uid == 0 then we are root so do ifrootpath
- int leng = strlen(oi->oi_symlink);
- int i = 0;
-    //first check if root?ifrootpath:ifnotrootpath
-    eprintk("this is the symlink: %s\n", oi->oi_symlink);
-    if(strncmp(oi->oi_symlink, "root?", 5) == 0){
-                 eprintk("we found cond symlink\n");
-
-              //find the :
-        for(i = 5; i <strlen(oi->oi_symlink); i++){
-            if(oi->oi_symlink[i] == ':'){//found correct formt for cond
-                eprintk("actual cond symlink found here.\n");
-                break;
-            }
-        }
-        if(i == strlen(oi->oi_symlink)){//just normal symlink..duno why starts with root?
-	        nd_set_link(nd, oi->oi_symlink);
-	        return (void *) 0;
-        }
-        //we have root?ifrootpath:ifnotrootpath
-        //with : at index i
-        if(current->uid == 0){//we are root
-            char tempp[leng +1];
-            //strncpy(temp, 5+oi->oi_symlink, i-5);
-            //oi->oi_symlink[i] = '\0';
-           // temp[i-5] = 0;
-          // char* tempp;
-            strcpy(tempp, oi->oi_symlink);
-            tempp[i] = 0;
-            //tempp = 5 + oi->oi_symlink;
-            eprintk("this is the link we try to follow **%s**\n", tempp + 5/*5 + oi->oi_symlink*/);
-
-            nd_set_link(nd, tempp + 5);
-            //oi->oi_symlink[i] = ':';
-            //return (void *) 0;
-        }
-        else{//we are not root
-            //oi->oi_symlink[i] = ':';
-            eprintk("this is the link we are trying to follow %s\n", 1+i+oi->oi_symlink);
-            nd_set_link(nd, 1+i + oi->oi_symlink);
-            //return (void *) 0;
-        }
+    if(strncmp(oi->oi_symlink, "root?", 5) == 0) {
+	    int colon_index = -1, len = strlen(oi->oi_symlink);
+	    int i;
+	    //find the colon
+	    for(i = 0; i<len; i++) {
+	    	if(oi->oi_symlink[i] == ':')
+	    		colon_index = i;
+	    }
+	    if(colon_index > 0) {
+	    	//eprintk("found cond link\n");
+	    	if(current->uid == 0){//we are root
+		    	//eprintk("link: *%s*\n", link);
+		    	int size = colon_index - 5;
+		    	char* link = (char*)kmalloc(size + 1, GFP_ATOMIC);
+		    	strncpy(link, oi->oi_symlink + 5, size );
+		    	link[size+1] = '\0';
+		    	//eprintk("link: *%s*\n", link);
+		    	nd_set_link(nd, link);
+		    	kfree(link);
+		    	return (void*) 0;
+		}
+		else {//not root
+			//eprintk("isn't root\n");
+		    	int size = len - colon_index -1;
+		    	char* link = (char*)kmalloc(size + 1, GFP_ATOMIC);
+		    	strncpy(link, oi->oi_symlink + colon_index + 1, size );
+		    	link[size+1] = '\0';
+		    	//eprintk("link: *%s*\n", link);
+		    	nd_set_link(nd, link);
+		    	kfree(link);
+		    	return (void*) 0;
+		}
+	    }
     }
-    else{//not cond so just treat normally
-	    nd_set_link(nd, oi->oi_symlink);
-    }
-    if(!(i == leng)){
-        //oi->oi_symlink[i] = ':';
-    }
-	return (void *) 0;
-    
+    nd_set_link(nd, oi->oi_symlink);
+    return (void*) 0;
 }
-
 
 // Define the file system operations structures mentioned above.
 
